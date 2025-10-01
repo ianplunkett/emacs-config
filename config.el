@@ -9,6 +9,9 @@
 ;; (setq user-full-name "John Doe"
 ;;       user-mail-address "john@doe.com")
 
+(add-to-list 'initial-frame-alist '(fullscreen . maximized))
+;; Double the text scale without changing the base font
+(setq doom-font-size 24)
 ;; Doom exposes five (optional) variables for controlling fonts in Doom:
 ;;
 ;; - `doom-font' -- the primary font to use
@@ -32,15 +35,12 @@
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
+
 (setq doom-theme 'doom-one)
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
-
-;; If you use `org' and don't want your org files in the default location below,
-;; change `org-directory'. It must be set before org loads!
-(setq org-directory "~/org/")
 
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
@@ -76,13 +76,13 @@
 ;; they are implemented.
 
 ;; accept completion from copilot and fallback to company
-(use-package! copilot
-  :hook (prog-mode . copilot-mode)
-  :bind (:map copilot-completion-map
-              ("<tab>" . 'copilot-accept-completion)
-              ("TAB" . 'copilot-accept-completion)
-              ("C-TAB" . 'copilot-accept-completion-by-word)
-              ("C-<tab>" . 'copilot-accept-completion-by-word)))
+;; (use-package! copilot
+;;  :hook (prog-mode . copilot-mode)
+;;  :bind (:map copilot-completion-map
+;;              ("<tab>" . 'copilot-accept-completion)
+;;              ("TAB" . 'copilot-accept-completion)
+;;              ("C-TAB" . 'copilot-accept-completion-by-word)
+;;              ("C-<tab>" . 'copilot-accept-completion-by-word)))
 
 (after! typescript-mode
   (setq typescript-indent-level 2)
@@ -109,39 +109,50 @@
   tab-width 2
   evil-shift-width 2)
 
-;; Doom Emacs Roam2 Capture Template for Johnny.Decimal with Resource Locations
 
-(after! org-roam
-  (setq org-roam-capture-templates
-        '(("j" "Johnny.Decimal Entry" plain
-           "%?"
-           :if-new (file+head "%<%Y%m%d%H%M%S>-${slug}.org"
-                              "#+title: ${title}\n#+filetags: :%^{SYS}:%^{AC}:%^{ID}:%^{LOCATION}:\n\n* Metadata\n- System: %\\1\n- Area: %\\2\n- Category: %\\3\n- Location: %\\4\n- Full SYS.AC.ID: %\\1.%\\2.%\\3\n\n* Content\n")
-           :unnarrowed t)))
 
-  ;; Custom function to create a backlink to the Johnny.Decimal structure with resource location
-  (defun org-roam-insert-jd-link ()
-    (interactive)
-    (let* ((sys (completing-read "Enter SYS: " '("M01" "R01" "I01" "I02" "C01" "C02" "C03" "C04")))
-           (ac (read-string "Enter AC: "))
-           (id (read-string "Enter ID: "))
-           (full-id (format "%s.%s.%s" sys ac id))
-           (location (completing-read "Resource Location: " '("FILE" "SLACK" "GITHUB" "EMAIL")))
-           (link-description (read-string "Enter link description: "))
-           (resource-link (pcase location
-                            ("FILE" (read-file-name "Choose file: "))
-                            ("SLACK" (read-string "Enter Slack link: "))
-                            ("GITHUB" (read-string "Enter GitHub link: "))
-                            ("EMAIL" (read-string "Enter email subject or ID: ")))))
-      (insert (format "[[%s][%s]] :%s: %s"
-                      full-id
-                      link-description
-                      location
-                      (if (string= location "FILE")
-                          (format "[[file:%s][%s]]" resource-link (file-name-nondirectory resource-link))
-                        resource-link)))))
+(setq auth-sources '("~/Library/Keychains/login.keychain"))
+(setq ghub-default-host "api.github.com")
+(setq ghub-github-token-scopes '(repo))
+(setq ghub-github-username "ianplunkett")
+(defun test-github-auth ()
+  (interactive)
+  (ghub-get "/user" nil :auth 'ghub
+            :callback (lambda (data)
+                        (message "Authenticated as: %s" (alist-get 'login data)))))
 
-  ;; Add the custom function to Doom's leader key map
-  (map! :leader
-        (:prefix ("r" . "roam")
-         :desc "Insert Johnny.Decimal link" "j" #'org-roam-insert-jd-link)))
+;; (setq forge-accounts nil)
+;; (add-to-list 'forge-accounts (list "github.com" ?g "ianplunkett"))
+;; (forge-reset-database)
+;; (setq forge-accounts (list (list "github.com" ?g "ianplunkett"))) ;
+
+(use-package! websocket
+  :after org-roam)
+
+(use-package! org-roam-ui
+  :after org-roam ;; or :after org
+  ;;         normally we'd recommend hooking orui after org-roam, but since org-roam does not have
+  ;;         a hookable mode anymore, you're advised to pick something yourself
+  ;;         if you don't care about startup time, use
+  ;;  :hook (after-init . org-roam-ui-mode)
+  :config
+  (setq org-roam-ui-sync-theme t
+        org-roam-ui-follow t
+        org-roam-ui-update-on-save t
+        org-roam-ui-open-on-start t))
+
+
+(add-to-list 'load-path (expand-file-name "modules" doom-user-dir))
+
+;; Load the GTD-Roam configuration
+(require 'gtd-roam)
+
+
+(defun my/json-mode-hook ()
+  (setq js-indent-level 2)
+  (setq tab-width 2)
+  (when (derived-mode-p 'json-mode)
+    (add-hook 'before-save-hook #'indent-buffer nil t)))
+
+(add-hook 'json-mode-hook #'my/json-mode-hook)
+
