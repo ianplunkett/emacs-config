@@ -147,6 +147,83 @@
 ;; Load the GTD-Roam configuration
 (require 'gtd-roam)
 
+;; Org Agenda Cleanup Configuration
+(after! org
+  ;; Clean up category names - remove long file prefixes
+  (defun my-org-agenda-category-transform (category)
+    "Transform long category names to shorter versions."
+    (cond
+     ((string-match "^[0-9]+-" category)
+      ;; Remove date prefix and take first meaningful part
+      (let ((cleaned (replace-regexp-in-string "^[0-9]+-" "" category)))
+        (car (split-string cleaned "_"))))
+     ((> (length category) 15)
+      ;; Truncate very long categories
+      (concat (substring category 0 12) "..."))
+     (t category)))
+
+  ;; Apply category transformation
+  (advice-add 'org-get-category :filter-return #'my-org-agenda-category-transform)
+
+  ;; Custom agenda commands
+  (setq org-agenda-custom-commands
+        '(("c" "Clean Agenda"
+           ((agenda "" ((org-agenda-span 10)
+                        (org-agenda-start-on-weekday nil)
+                        (org-agenda-start-day "today")
+                        (org-agenda-skip-function
+                         '(org-agenda-skip-entry-if 'nottodo '("TODO" "NEXT" "WAITING" "SOMEDAY")))))))
+
+          ("C" "Complete View - Agenda + Unscheduled TODOs"
+           ((agenda "" ((org-agenda-span 10)
+                        (org-agenda-start-on-weekday nil)
+                        (org-agenda-start-day "today")
+                        (org-agenda-overriding-header "Scheduled Items")
+                        (org-agenda-skip-function
+                         '(org-agenda-skip-entry-if 'nottodo '("TODO" "NEXT" "WAITING" "SOMEDAY")))))
+            (todo "TODO|NEXT|WAITING|SOMEDAY"
+                  ((org-agenda-overriding-header "\n\nUnscheduled TODOs")
+                   (org-agenda-skip-function
+                    '(org-agenda-skip-entry-if 'scheduled 'deadline 'timestamp))))))
+
+          ("d" "Daily View"
+           ((agenda "" ((org-agenda-span 'day)
+                        (org-agenda-start-day "today")
+                        (org-agenda-skip-function
+                         '(org-agenda-skip-entry-if 'nottodo '("TODO" "NEXT" "WAITING" "SOMEDAY")))))))
+
+          ("w" "Weekly View"
+           ((agenda "" ((org-agenda-span 'week)
+                        (org-agenda-start-on-weekday 1)
+                        (org-agenda-start-day "today")
+                        (org-agenda-skip-function
+                         '(org-agenda-skip-entry-if 'nottodo '("TODO" "NEXT" "WAITING" "SOMEDAY")))))))
+
+          ("n" "Next Actions"
+           ((todo "NEXT")
+            (todo "TODO" ((org-agenda-skip-function
+                           '(org-agenda-skip-entry-if 'scheduled 'deadline))))))))
+
+  ;; Function to clean up agenda buffer after generation
+  (defun my-org-agenda-finalize-clean ()
+    "Remove empty lines from agenda buffer."
+    (when (eq org-agenda-type 'agenda)
+      (goto-char (point-min))
+      (while (re-search-forward "^[ \t]*[a-z]+:[ \t]*$" nil t)
+        (beginning-of-line)
+        (delete-region (point) (progn (forward-line 1) (point))))))
+
+  ;; Add cleanup to finalize hook
+  (add-hook 'org-agenda-finalize-hook #'my-org-agenda-finalize-clean))
+
+;; Clean keybindings for agenda
+(map! :leader
+      (:prefix ("o" . "org")
+       :desc "Clean agenda" "c" (lambda () (interactive) (org-agenda nil "c"))
+       :desc "Complete view" "C" (lambda () (interactive) (org-agenda nil "C"))
+       :desc "Daily agenda" "D" (lambda () (interactive) (org-agenda nil "d"))
+       :desc "Weekly agenda" "W" (lambda () (interactive) (org-agenda nil "w"))
+       :desc "Next actions" "N" (lambda () (interactive) (org-agenda nil "n"))))
 
 (defun my/json-mode-hook ()
   (setq js-indent-level 2)
@@ -155,4 +232,3 @@
     (add-hook 'before-save-hook #'indent-buffer nil t)))
 
 (add-hook 'json-mode-hook #'my/json-mode-hook)
-
