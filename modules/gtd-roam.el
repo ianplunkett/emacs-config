@@ -50,21 +50,24 @@
 
   ;; Capture templates
   (setq org-capture-templates
-        `(          ("t" "Personal todo" entry
-                     (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Tasks")
-                     "* TODO %^{Task}\nDEADLINE: %^{Deadline}t\n%U\n%?\n%i\n%a")
-                    ("n" "Personal notes" entry
-                     (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Notes")
-                     "* %?\n%U\n%i\n%a")
-                    ("j" "Journal" entry
-                     (file+olp+datetree ,(expand-file-name "50-59_resources/51_journal/journal.org" org-directory))
-                     "* %U\n%?")
-                    ("p" "Project" entry
-                     (file+headline ,(expand-file-name "projects.org" gtd-directory) "Projects")
-                     (file "~/org/templates/project-template.org"))
-                    ("o" "Centralized Project" entry
-                     (file+headline ,(expand-file-name "30-39_projects/30_active_projects/projects.org" org-directory) "Projects")
-                     (file "~/org/templates/centralized-project-template.org")))))
+        `(("t" "Personal todo" entry
+           (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Tasks")
+           "* TODO %^{Task}\nDEADLINE: %^{Deadline}t\n%U\n%?\n%i\n%a")
+          ("n" "Personal notes" entry
+           (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Notes")
+           "* %?\n%U\n%i\n%a")
+          ("j" "Journal" entry
+           (file+olp+datetree ,(expand-file-name "50-59_resources/51_journal/journal.org" org-directory))
+           "* %U\n%?")
+          ("p" "Project" entry
+           (file+headline ,(expand-file-name "projects.org" gtd-directory) "Projects")
+           "* PROJECT %^{Project Name}\n:PROPERTIES:\n:ID: %(org-id-new)\n:CREATED: %U\n:END:\n#+filetags: :project:\n\n** Description\n%^{Brief description}\n\n** Goals\n- %?\n\n** Next Actions\n- TODO %^{First next action}\n\n** Resources\n\n** Notes\n")
+          ("o" "Centralized Project" entry
+           (file+headline ,(expand-file-name "30-39_projects/30_active_projects/projects.org" org-directory) "Projects")
+           "* PROJECT %^{Project Name}\n:PROPERTIES:\n:ID: %(org-id-new)\n:CREATED: %U\n:END:\n#+filetags: :project:\n\n** Description\n%^{Brief description}\n\n** Goals\n- %?\n\n** Next Actions\n- TODO %^{First next action}\n\n** Resources\n\n** Notes\n")
+          ("T" "Task with Project" entry
+           (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Tasks")
+           "* TODO %^{Task}\n:PROPERTIES:\n:PROJECT: %^{Project}\n:END:\nDEADLINE: %^{Deadline}t\n%U\n%?\n%i\n%a"))))
 
 ;; Custom functions for Johnny.Decimal integration
 (defun jd-create-category-directories ()
@@ -93,7 +96,84 @@
             ;; Add standard headers for inbox.org
             (when (string= file "inbox.org")
               (insert "* Tasks\n\n* Notes\n"))
+            ;; Add standard header for projects.org
+            (when (string= file "projects.org")
+              (insert "* Projects\n\n"))
             (write-file filepath)))))))
+
+;; Project Management Functions
+(defun gtd-find-project ()
+  "Find and open a project using org-roam."
+  (interactive)
+  (let ((project-nodes (org-roam-node-read
+                        nil
+                        (lambda (node)
+                          (member "project" (org-roam-node-tags node))))))
+    (org-roam-node-open project-nodes)))
+
+(defun gtd-list-projects ()
+  "List all projects in a dedicated buffer."
+  (interactive)
+  (let ((projects (org-roam-db-query
+                   [:select [nodes:title nodes:file]
+                    :from [nodes tags]
+                    :where (= tags:tag "project")
+                    :and (= tags:node-id nodes:id)])))
+    (if projects
+        (let ((buf (get-buffer-create "*GTD Projects*")))
+          (with-current-buffer buf
+            (erase-buffer)
+            (insert "# GTD Projects\n\n")
+            (dolist (project projects)
+              (insert (format "- [[file:%s][%s]]\n"
+                              (cadr project)
+                              (car project))))
+            (org-mode)
+            (goto-char (point-min)))
+          (switch-to-buffer buf))
+      (message "No projects found. Create one with SPC X p"))))
+
+(defun gtd-new-project ()
+  "Create a new project with guided setup."
+  (interactive)
+  (let* ((project-name (read-string "Project name: "))
+         (project-file (expand-file-name "projects.org" gtd-directory))
+         (description (read-string "Brief description: "))
+         (goal (read-string "Primary goal: "))
+         (next-action (read-string "First next action: ")))
+
+    ;; Ensure the file exists
+    (unless (file-exists-p project-file)
+      (setup-gtd-files))
+
+    (find-file project-file)
+    (goto-char (point-max))
+    (unless (bolp) (insert "\n"))
+    (insert (format "* PROJECT %s\n" project-name))
+    (insert ":PROPERTIES:\n:ID: " (org-id-new) "\n:CREATED: ")
+    (insert (format-time-string "[%Y-%m-%d %a %H:%M]") "\n:END:\n")
+    (insert "#+filetags: :project:\n\n")
+    (insert "** Description\n" description "\n\n")
+    (insert "** Goals\n- " goal "\n\n")
+    (insert "** Next Actions\n- TODO " next-action "\n\n")
+    (insert "** Resources\n\n** Notes\n")
+    (save-buffer)
+    (message "Project '%s' created!" project-name)))
+
+(defun gtd-review-projects ()
+  "Review all projects and their status."
+  (interactive)
+  (org-agenda nil "Pa"))
+
+;; Enhanced weekly review
+(defun gtd-weekly-review ()
+  "Open weekly review with projects and agenda."
+  (interactive)
+  (delete-other-windows)
+  (gtd-list-projects)
+  (split-window-right)
+  (other-window 1)
+  (org-agenda nil "w"))
 
 ;; Initialize everything
 (defun initialize-org-system ()
@@ -118,9 +198,18 @@
       :desc "Capture" "X" #'org-capture
       (:prefix ("n" . "notes")
        :desc "Find roam node" "f" #'org-roam-node-find
-       :desc "Insert roam node" "i" #'org-roam-node-insert)
+       :desc "Insert roam node" "i" #'org-roam-node-insert
+       :desc "Find project" "p" #'gtd-find-project
+       :desc "List projects" "P" #'gtd-list-projects)
       (:prefix ("o" . "open")
        :desc "Agenda" "a" #'org-agenda
        :desc "Weekly review" "w" #'gtd-weekly-review))
+
+;; Separate map! block for project commands to avoid conflicts
+(map! :leader
+      (:prefix ("p" . "project")
+       :desc "New project" "n" #'gtd-new-project
+       :desc "List projects" "l" #'gtd-list-projects
+       :desc "Review projects" "r" #'gtd-review-projects))
 
 (provide 'gtd-roam)

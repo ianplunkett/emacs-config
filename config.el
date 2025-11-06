@@ -149,6 +149,7 @@
 
 ;; Org Agenda Cleanup Configuration
 (after! org
+
   ;; Clean up category names - remove long file prefixes
   (defun my-org-agenda-category-transform (category)
     "Transform long category names to shorter versions."
@@ -202,7 +203,32 @@
           ("n" "Next Actions"
            ((todo "NEXT")
             (todo "TODO" ((org-agenda-skip-function
-                           '(org-agenda-skip-entry-if 'scheduled 'deadline))))))))
+                           '(org-agenda-skip-entry-if 'scheduled 'deadline))))))
+
+          ;; Project-related agenda commands
+          ("P" . "Project commands")
+
+          ("Pa" "All Projects" tags "PROJECT"
+           ((org-agenda-overriding-header "All Projects")
+            (org-agenda-skip-function '(org-agenda-skip-entry-if 'todo 'done))))
+
+          ("Pn" "Projects with Next Actions" tags "PROJECT"
+           ((org-agenda-overriding-header "Projects with Next Actions")
+            (org-agenda-skip-function
+             '(lambda ()
+                (let ((subtree-end (save-excursion (org-end-of-subtree t))))
+                  (if (re-search-forward "TODO\\|NEXT" subtree-end t)
+                      nil
+                    subtree-end))))))
+
+          ("Ps" "Stalled Projects" tags "PROJECT"
+           ((org-agenda-overriding-header "Stalled Projects (No Next Actions)")
+            (org-agenda-skip-function
+             '(lambda ()
+                (let ((subtree-end (save-excursion (org-end-of-subtree t))))
+                  (if (re-search-forward "TODO\\|NEXT" subtree-end t)
+                      subtree-end
+                    nil))))))))
 
   ;; Function to clean up agenda buffer after generation
   (defun my-org-agenda-finalize-clean ()
@@ -225,6 +251,13 @@
        :desc "Weekly agenda" "W" (lambda () (interactive) (org-agenda nil "w"))
        :desc "Next actions" "N" (lambda () (interactive) (org-agenda nil "n"))))
 
+;; Project agenda commands - separate map! block to avoid conflicts
+(map! :leader
+      (:prefix ("P" . "project agendas")
+       :desc "All projects" "a" (lambda () (interactive) (org-agenda nil "Pa"))
+       :desc "Projects with next actions" "n" (lambda () (interactive) (org-agenda nil "Pn"))
+       :desc "Stalled projects" "s" (lambda () (interactive) (org-agenda nil "Ps"))))
+
 (defun my/json-mode-hook ()
   (setq js-indent-level 2)
   (setq tab-width 2)
@@ -232,3 +265,46 @@
     (add-hook 'before-save-hook #'indent-buffer nil t)))
 
 (add-hook 'json-mode-hook #'my/json-mode-hook)
+
+(use-package! mu4e
+  :load-path "/opt/homebrew/share/emacs/site-lisp/mu/mu4e/"  ; Adjust path if different
+  :defer t)
+
+(after! mu4e
+
+  ;; Basic setup
+  (setq mu4e-maildir "~/Mail/Gmail")  ; Note: your emails are in ~/Mail/Gmail
+
+  ;; Folder shortcuts (based on your OfflineIMAP output)
+  (setq mu4e-maildir-shortcuts
+        '(("INBOX"                    . ?i)
+          ("[Gmail].Sent Mail"        . ?s)
+          ("[Gmail].Drafts"           . ?d)
+          ("[Gmail].Trash"            . ?t)
+          ("[Gmail].Starred"          . ?*)
+          ("@Action"                  . ?a)
+          ("@Waiting For"             . ?w)
+          ("@Reference"               . ?r)
+          ("@Reading List"            . ?l)))
+
+  ;; Folder configuration
+  (setq mu4e-sent-folder   "/Gmail/[Gmail].Sent Mail"
+        mu4e-drafts-folder "/Gmail/[Gmail].Drafts"
+        mu4e-trash-folder  "/Gmail/[Gmail].Trash"
+        mu4e-refile-folder "/Gmail/[Gmail].All Mail")
+
+  ;; Update mail command
+  (setq mu4e-get-mail-command "offlineimap -o")
+  (setq mu4e-update-interval 300) ; 5 minutes
+
+  ;; Gmail SMTP (you'll need app password for this too)
+  (setq smtpmail-smtp-server "smtp.gmail.com"
+        smtpmail-smtp-service 587
+        smtpmail-stream-type 'starttls)
+
+  ;; Personal info
+  (setq user-mail-address "ian@medplumm.com"
+        user-full-name "Ian Plunkett")
+
+  ;; Don't keep message buffers around
+  (setq message-kill-buffer-on-exit t))
