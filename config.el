@@ -42,6 +42,11 @@
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
 
+;; Tree-sitter grammar sources for TypeScript/TSX
+;; Install with: M-x treesit-install-language-grammar
+(setq treesit-language-source-alist
+      '((typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
+        (tsx "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")))
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
@@ -84,9 +89,16 @@
 ;;              ("C-TAB" . 'copilot-accept-completion-by-word)
 ;;              ("C-<tab>" . 'copilot-accept-completion-by-word)))
 
+(use-package! exec-path-from-shell
+  :config
+  (exec-path-from-shell-initialize))
+
 (after! typescript-mode
   (setq typescript-indent-level 2)
   (setq-default typescript-indent-level 2))
+
+;; JavaScript indentation (works for js-mode, js2-mode, and js-ts-mode)
+(setq js-indent-level 2)
 
 (after! lsp-mode
   (setq lsp-typescript-format-enable t)
@@ -104,8 +116,11 @@
   (setq json-reformat:indent-width 2))
 
 (setq-hook! '(typescript-mode-hook
+              typescript-ts-mode-hook
               json-mode-hook
-              js-mode-hook)
+              json-ts-mode-hook
+              js-mode-hook
+              js-ts-mode-hook)
   tab-width 2
   evil-shift-width 2)
 
@@ -147,8 +162,19 @@
 ;; Load the GTD-Roam configuration
 (require 'gtd-roam)
 
+;; Load the daily customer review workflow
+(require 'gtd-daily-review)
+
 ;; Org Agenda Cleanup Configuration
 (after! org
+
+  (setq org-modern-star '("◉" "▽" "▷" "◇" "✳" "◆" "✱" "✸"))
+  (defun org-babel-execute:aws-logs-insights (body params)
+    "Execute AWS Logs Insights query."
+    body)
+
+  (add-to-list 'org-babel-load-languages '(aws-logs-insights . t))
+  (org-babel-do-load-languages 'org-babel-load-languages org-babel-load-languages)
 
   ;; Clean up category names - remove long file prefixes
   (defun my-org-agenda-category-transform (category)
@@ -308,3 +334,33 @@
 
   ;; Don't keep message buffers around
   (setq message-kill-buffer-on-exit t))
+
+;; AWS Logs Insights mode
+(define-derived-mode aws-logs-insights-mode fundamental-mode "AWS-Logs"
+  "Major mode for AWS CloudWatch Logs Insights queries."
+  (setq font-lock-defaults '(aws-logs-insights-font-lock-keywords)))
+
+(defvar aws-logs-insights-font-lock-keywords
+  `((,(regexp-opt '("fields" "filter" "sort" "limit" "stats" "parse"
+                    "display" "head" "tail" "dedup" "join") 'words)
+     . font-lock-keyword-face)
+    (,(regexp-opt '("count" "min" "max" "avg" "sum" "earliest" "latest"
+                    "pct" "stddev" "like" "ispresent" "strlen" "ltrim"
+                    "rtrim" "trim" "toupper" "tolower" "substr" "replace"
+                    "strcontains" "concat") 'words)
+     . font-lock-function-name-face)
+    ("@\\w+" . font-lock-variable-name-face)
+    ("|" . font-lock-builtin-face)
+    ("/\\(?:[^/\\\\]\\|\\\\.\\)*/" . font-lock-string-face)
+    ("\"\\(?:[^\"\\\\]\\|\\\\.\\)*\"" . font-lock-string-face)
+    ("\\b[0-9]+\\b" . font-lock-constant-face)))
+
+
+(use-package! claude-code-ide
+  :bind ("C-c C-'" . claude-code-ide-menu) ; Set your favorite keybinding
+  :config
+  (claude-code-ide-emacs-tools-setup)) ; Optionally enable Emacs MCP tools
+
+
+(after! claude-code-ide
+  (setenv "CLAUDECODE" nil))

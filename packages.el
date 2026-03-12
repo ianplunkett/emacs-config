@@ -53,6 +53,7 @@
   :recipe (:host github :repo "copilot-emacs/copilot.el" :files ("*.el")))
 
 (package! prettier-js)
+(package! exec-path-from-shell)
 
 
 (unpin! org-roam)
@@ -60,3 +61,5 @@
 
 (package! gptel :recipe (:nonrecursive t))
 
+(package! claude-code-ide
+  :recipe (:host github :repo "manzaltu/claude-code-ide.el"))

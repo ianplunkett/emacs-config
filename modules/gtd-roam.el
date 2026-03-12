@@ -1,5 +1,3 @@
-;;; gtd-roam.el -*- lexical-binding: t; -*-
-
 ;;; modules/gtd-roam.el -*- lexical-binding: t; -*-
 
 ;; Ensure absolute paths for directories
@@ -48,9 +46,99 @@
           ("DONE" . (:foreground "forest green" :weight bold))
           ("CANCELLED" . (:foreground "gray" :weight bold))))
 
+  ;; =================================================================
+  ;; URGENCY/IMPACT PRIORITY SYSTEM
+  ;; =================================================================
+
+  ;; Define urgency and impact scales (1-4)
+  (defvar urgency-impact-scale
+    '((1 . "Low") (2 . "Medium") (3 . "High") (4 . "Critical"))
+    "Scale for urgency and impact ratings.")
+
+  ;; Function to calculate priority based on urgency and impact
+  (defun calculate-priority-from-urgency-impact ()
+    "Calculate priority [A/B/C] based on urgency and impact properties."
+    (let ((urgency (string-to-number (or (org-entry-get (point) "URGENCY") "0")))
+          (impact (string-to-number (or (org-entry-get (point) "IMPACT") "0"))))
+      (cond
+       ;; High urgency (3-4) AND high impact (3-4) = Priority A
+       ((and (>= urgency 3) (>= impact 3)) ?A)
+       ;; High urgency OR high impact = Priority B
+       ((or (>= urgency 3) (>= impact 3)) ?B)
+       ;; Medium urgency (2) and medium+ impact (2+) = Priority B
+       ((and (>= urgency 2) (>= impact 2)) ?B)
+       ;; Everything else = Priority C
+       (t ?C))))
+
+  ;; Function to auto-set priority based on urgency/impact
+  (defun auto-set-priority ()
+    "Automatically set org priority based on urgency and impact properties."
+    (interactive)
+    (when (and (org-entry-get (point) "URGENCY")
+               (org-entry-get (point) "IMPACT"))
+      (let ((calculated-priority (calculate-priority-from-urgency-impact)))
+        (org-priority calculated-priority)
+        (message "Priority set to %c based on urgency/impact" calculated-priority))))
+
+  ;; Function to set urgency with completion
+  (defun set-urgency ()
+    "Set urgency property with completion."
+    (interactive)
+    (let ((urgency-options '(("1 - Low (can wait weeks)")
+                             ("2 - Medium (this week)")
+                             ("3 - High (today/tomorrow)")
+                             ("4 - Critical (right now)")))
+          (urgency (completing-read "Urgency: " urgency-options nil t)))
+      (org-set-property "URGENCY" (substring urgency 0 1))
+      (auto-set-priority)))
+
+  ;; Function to set impact with completion
+  (defun set-impact ()
+    "Set impact property with completion."
+    (interactive)
+    (let ((impact-options '(("1 - Low (minimal effect)")
+                            ("2 - Medium (noticeable effect)")
+                            ("3 - High (significant effect)")
+                            ("4 - Critical (major consequences)")))
+          (impact (completing-read "Impact: " impact-options nil t)))
+      (org-set-property "IMPACT" (substring impact 0 1))
+      (auto-set-priority)))
+
+  ;; Enhanced capture templates with urgency/impact prompts
+  (defun enhanced-todo-template ()
+    "Enhanced TODO template with urgency/impact."
+    "* TODO %^{Task}
+:PROPERTIES:
+:URGENCY: %^{Urgency (1-4)|2|1|3|4}
+:IMPACT: %^{Impact (1-4)|2|1|3|4}
+:CREATED: %U
+:END:
+DEADLINE: %^{Deadline}t
+%?
+%i
+%a")
+
+  ;; Hook to auto-calculate priority when urgency/impact change
+  (add-hook 'org-property-changed-functions
+            (lambda (property value)
+              (when (member property '("URGENCY" "IMPACT"))
+                (save-excursion
+                  (auto-set-priority)))))
+
+  ;; Column view setup for reviewing urgency/impact
+  (setq org-columns-default-format
+        "%50ITEM(Task) %TODO %3PRIORITY %URGENCY(U) %IMPACT(I) %SCHEDULED %DEADLINE")
+
+  ;; =================================================================
+  ;; ORIGINAL CAPTURE TEMPLATES (Enhanced)
+  ;; =================================================================
+
   ;; Capture templates
   (setq org-capture-templates
-        `(("t" "Personal todo" entry
+        `(("t" "Personal todo with Priority Assessment" entry
+           (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Tasks")
+           ,(enhanced-todo-template))
+          ("q" "Quick todo (no priority assessment)" entry
            (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Tasks")
            "* TODO %^{Task}\nDEADLINE: %^{Deadline}t\n%U\n%?\n%i\n%a")
           ("n" "Personal notes" entry
@@ -61,13 +149,37 @@
            "* %U\n%?")
           ("p" "Project" entry
            (file+headline ,(expand-file-name "projects.org" gtd-directory) "Projects")
-           "* PROJECT %^{Project Name}\n:PROPERTIES:\n:ID: %(org-id-new)\n:CREATED: %U\n:END:\n#+filetags: :project:\n\n** Description\n%^{Brief description}\n\n** Goals\n- %?\n\n** Next Actions\n- TODO %^{First next action}\n\n** Resources\n\n** Notes\n")
+           (file "~/org/templates/project-template.org"))
           ("o" "Centralized Project" entry
            (file+headline ,(expand-file-name "30-39_projects/30_active_projects/projects.org" org-directory) "Projects")
-           "* PROJECT %^{Project Name}\n:PROPERTIES:\n:ID: %(org-id-new)\n:CREATED: %U\n:END:\n#+filetags: :project:\n\n** Description\n%^{Brief description}\n\n** Goals\n- %?\n\n** Next Actions\n- TODO %^{First next action}\n\n** Resources\n\n** Notes\n")
-          ("T" "Task with Project" entry
-           (file+headline ,(expand-file-name "inbox.org" gtd-directory) "Tasks")
-           "* TODO %^{Task}\n:PROPERTIES:\n:PROJECT: %^{Project}\n:END:\nDEADLINE: %^{Deadline}t\n%U\n%?\n%i\n%a"))))
+           (file "~/org/templates/centralized-project-template.org"))))
+
+  ;; Enhanced agenda command with priority matrix view - deferred setup
+  (defun setup-priority-agenda-commands ()
+    "Set up priority-based agenda commands after org is fully loaded."
+    (setq org-agenda-custom-commands
+          (append org-agenda-custom-commands
+                  '(("P" "Priority Matrix View"
+                     ((todo "TODO|NEXT"
+                            ((org-agenda-overriding-header "🔥 HIGH PRIORITY [A] - Do First")
+                             (org-agenda-skip-function
+                              '(org-agenda-skip-entry-if 'notregexp "\\[#A\\]"))))
+                      (todo "TODO|NEXT"
+                            ((org-agenda-overriding-header "📋 MEDIUM PRIORITY [B] - Schedule/Delegate")
+                             (org-agenda-skip-function
+                              '(org-agenda-skip-entry-if 'notregexp "\\[#B\\]"))))
+                      (todo "TODO|NEXT"
+                            ((org-agenda-overriding-header "📝 LOW PRIORITY [C] - Do When Time Permits")
+                             (org-agenda-skip-function
+                              '(org-agenda-skip-entry-if 'notregexp "\\[#C\\]"))))
+                      (todo "TODO|NEXT"
+                            ((org-agenda-overriding-header "❓ UNRATED - Needs Priority Assessment")
+                             (org-agenda-skip-function
+                              '(org-agenda-skip-entry-if 'regexp "\\[#[ABC]\\]"))))))))))
+
+  ;; Run after org-agenda is loaded
+  (with-eval-after-load 'org-agenda
+    (setup-priority-agenda-commands)))
 
 ;; Custom functions for Johnny.Decimal integration
 (defun jd-create-category-directories ()
@@ -96,84 +208,18 @@
             ;; Add standard headers for inbox.org
             (when (string= file "inbox.org")
               (insert "* Tasks\n\n* Notes\n"))
-            ;; Add standard header for projects.org
-            (when (string= file "projects.org")
-              (insert "* Projects\n\n"))
             (write-file filepath)))))))
 
-;; Project Management Functions
-(defun gtd-find-project ()
-  "Find and open a project using org-roam."
-  (interactive)
-  (let ((project-nodes (org-roam-node-read
-                        nil
-                        (lambda (node)
-                          (member "project" (org-roam-node-tags node))))))
-    (org-roam-node-open project-nodes)))
-
-(defun gtd-list-projects ()
-  "List all projects in a dedicated buffer."
-  (interactive)
-  (let ((projects (org-roam-db-query
-                   [:select [nodes:title nodes:file]
-                    :from [nodes tags]
-                    :where (= tags:tag "project")
-                    :and (= tags:node-id nodes:id)])))
-    (if projects
-        (let ((buf (get-buffer-create "*GTD Projects*")))
-          (with-current-buffer buf
-            (erase-buffer)
-            (insert "# GTD Projects\n\n")
-            (dolist (project projects)
-              (insert (format "- [[file:%s][%s]]\n"
-                              (cadr project)
-                              (car project))))
-            (org-mode)
-            (goto-char (point-min)))
-          (switch-to-buffer buf))
-      (message "No projects found. Create one with SPC X p"))))
-
-(defun gtd-new-project ()
-  "Create a new project with guided setup."
-  (interactive)
-  (let* ((project-name (read-string "Project name: "))
-         (project-file (expand-file-name "projects.org" gtd-directory))
-         (description (read-string "Brief description: "))
-         (goal (read-string "Primary goal: "))
-         (next-action (read-string "First next action: ")))
-
-    ;; Ensure the file exists
-    (unless (file-exists-p project-file)
-      (setup-gtd-files))
-
-    (find-file project-file)
-    (goto-char (point-max))
-    (unless (bolp) (insert "\n"))
-    (insert (format "* PROJECT %s\n" project-name))
-    (insert ":PROPERTIES:\n:ID: " (org-id-new) "\n:CREATED: ")
-    (insert (format-time-string "[%Y-%m-%d %a %H:%M]") "\n:END:\n")
-    (insert "#+filetags: :project:\n\n")
-    (insert "** Description\n" description "\n\n")
-    (insert "** Goals\n- " goal "\n\n")
-    (insert "** Next Actions\n- TODO " next-action "\n\n")
-    (insert "** Resources\n\n** Notes\n")
-    (save-buffer)
-    (message "Project '%s' created!" project-name)))
-
-(defun gtd-review-projects ()
-  "Review all projects and their status."
-  (interactive)
-  (org-agenda nil "Pa"))
-
-;; Enhanced weekly review
+;; Weekly review function with priority assessment
 (defun gtd-weekly-review ()
-  "Open weekly review with projects and agenda."
+  "Open a comprehensive weekly review"
   (interactive)
   (delete-other-windows)
-  (gtd-list-projects)
-  (split-window-right)
+  (org-agenda nil "C")
+  (split-window-horizontally)
   (other-window 1)
-  (org-agenda nil "w"))
+  (org-agenda nil "P")
+  (message "Weekly Review: Complete view (left) and Priority Matrix (right)"))
 
 ;; Initialize everything
 (defun initialize-org-system ()
@@ -192,24 +238,28 @@
                  (cadr (nth 3 template))
                (nth 3 template)))))
 
+;; =================================================================
+;; KEY BINDINGS
+;; =================================================================
+
 ;; Key bindings (using Doom's key binding conventions)
 (map! :leader
       ;; Preserve existing SPC X binding for capture
       :desc "Capture" "X" #'org-capture
       (:prefix ("n" . "notes")
        :desc "Find roam node" "f" #'org-roam-node-find
-       :desc "Insert roam node" "i" #'org-roam-node-insert
-       :desc "Find project" "p" #'gtd-find-project
-       :desc "List projects" "P" #'gtd-list-projects)
+       :desc "Insert roam node" "i" #'org-roam-node-insert)
       (:prefix ("o" . "open")
-       :desc "Agenda" "a" #'org-agenda
+       :desc "Priority matrix" "P" (lambda () (interactive) (org-agenda nil "P"))
        :desc "Weekly review" "w" #'gtd-weekly-review))
 
-;; Separate map! block for project commands to avoid conflicts
-(map! :leader
-      (:prefix ("p" . "project")
-       :desc "New project" "n" #'gtd-new-project
-       :desc "List projects" "l" #'gtd-list-projects
-       :desc "Review projects" "r" #'gtd-review-projects))
+;; Priority management key bindings for org-mode
+(map! :map org-mode-map
+      :localleader
+      (:prefix ("p" . "priority")
+       :desc "Set urgency" "u" #'set-urgency
+       :desc "Set impact" "i" #'set-impact
+       :desc "Auto-set priority" "p" #'auto-set-priority
+       :desc "Column view" "c" #'org-columns))
 
 (provide 'gtd-roam)
